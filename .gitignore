@@ -1,0 +1,24 @@
+# Ambiente virtual Python
+venv/
+__pycache__/
+*.pyc
+
+# Segredos -- NUNCA commitar chaves de API
+.env
+
+# Dados -- o projeto é reproduzível a partir do código (ver README), não
+# faz sentido versionar arquivos de dados brutos ou tratados no Git:
+# são grandes, mudam a cada execução, e são baixados de fonte pública.
+dados_brutos/
+bronze/
+silver/
+gold/
+amostras_raw/
+amostras_raw_transparencia/
+*.parquet
+*.csv
+
+# Arquivos de IDE / sistema operacional
+.vscode/
+.DS_Store
+Thumbs.db
