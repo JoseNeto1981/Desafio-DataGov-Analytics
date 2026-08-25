@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: datagov_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-datagov}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-datagov}
+      POSTGRES_DB: ${POSTGRES_DB:-datagov_dw}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-datagov} -d ${POSTGRES_DB:-datagov_dw}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
