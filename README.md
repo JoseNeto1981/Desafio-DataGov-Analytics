@@ -67,7 +67,9 @@ Download manual (CSV)  →  dados_brutos/
                               ↓
               silver/<dataset>.parquet  (+ relatório de qualidade)
                               ↓
-                         [gold — a construir]
+                    transformar_gold.py
+                              ↓
+        gold/dim_*.parquet + gold/fato_*.parquet  (esquema estrela)
                               ↓
                   [PostgreSQL / DW — a construir]
                               ↓
@@ -113,6 +115,9 @@ python ingestao_bronze.py
 
 # 3. Rode o tratamento para a camada silver
 python transformar_silver.py
+
+# 4. Rode a modelagem dimensional para a camada gold
+python transformar_gold.py
 ```
 
 ## 8. Estrutura do projeto
@@ -124,6 +129,7 @@ python transformar_silver.py
 ├── silver/                    # Dados tratados em Parquet (não versionado)
 ├── ingestao_bronze.py         # Ingestão: dados_brutos/ -> bronze/
 ├── transformar_silver.py      # Tratamento: bronze/ -> silver/
+├── transformar_gold.py        # Modelagem dimensional: silver/ -> gold/ (fato/dimensões)
 ├── explorar_pncp.py           # Script exploratório da API do PNCP (descontinuada como fonte principal)
 ├── explorar_portal_transparencia.py  # Script exploratório da API do Portal da Transparência (bloqueada por autenticação)
 ├── requirements.txt
@@ -133,8 +139,46 @@ python transformar_silver.py
 
 ## 9. Modelo de dados
 
-*A construir — grão da tabela fato e modelo dimensional serão documentados
-aqui na próxima etapa.*
+Esquema estrela com 5 dimensões e 2 tabelas fato, construído a partir da
+camada silver (`transformar_gold.py`).
+
+### Grão das tabelas fato
+
+- **`fato_item_licitacao`**: 1 linha = 1 item vencido dentro de 1 licitação.
+  É o grão mais fino disponível com valor monetário associado.
+- **`fato_participacao`**: 1 linha = 1 fornecedor disputando 1 item (tenha
+  vencido ou não). Necessária porque perguntas sobre concorrência (quantos
+  disputaram, em quais estados há mais fornecedores atuando) precisam de
+  quem participou, não só de quem venceu.
+
+### Dimensões
+
+| Dimensão | Grão | Por que existe |
+|---|---|---|
+| `dim_tempo` | 1 data | Evolução temporal do volume de compras (pergunta 4) |
+| `dim_orgao` | 1 Unidade Gestora | Estado, órgão, município (perguntas 3, 6, 9) |
+| `dim_fornecedor` | 1 fornecedor (união de vencedores + participantes) | Ranking e análise de preços por fornecedor (perguntas 2, 8) |
+| `dim_produto` | 1 descrição de item distinta (união de itens + participantes) | Ranking de produtos/serviços (perguntas 1, 7) |
+| `dim_licitacao` | 1 licitação | Contexto do processo (modalidade, situação, objeto) |
+
+### Decisão de modelagem importante: chave composta da licitação
+
+A princípio, `Número Licitação` + `Código UG` parecia suficiente para
+identificar uma licitação de forma única. Ao validar os dados, encontramos
+**13 casos** em que essa combinação se repete com `Modalidade Compra`
+diferente (ex.: o número `000142023` existe tanto como Pregão quanto como
+Dispensa de Licitação, na mesma UG). A chave de negócio correta é
+`Número Licitação` + `Código UG` + `Código Modalidade Compra` — sem isso,
+itens de uma licitação seriam vinculados por engano aos atributos da outra.
+
+### Decisão de modelagem: união de fontes para `dim_fornecedor` e `dim_produto`
+
+Nem todo item que aparece na tabela de Participantes tem um registro
+espelhado idêntico na tabela de Itens (31 descrições de produto e alguns
+fornecedores só existem em um dos dois). Por isso, as duas dimensões são
+construídas como união das duas fontes — evita que `fato_participacao`
+fique com chaves estrangeiras nulas por um item que só foi "visto" do lado
+da disputa, não do lado do vencedor.
 
 ## 10. Decisões técnicas e regras de tratamento
 
