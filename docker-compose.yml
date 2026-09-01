@@ -18,5 +18,43 @@ services:
       timeout: 5s
       retries: 5
 
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: datagov_airflow
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Metadados do próprio Airflow (agendamento, histórico de execuções)
+      # usam SQLite + SequentialExecutor -- suficiente aqui porque as tasks
+      # são estritamente sequenciais (uma depende da anterior, sem
+      # paralelismo real a ganhar); evita subir um segundo Postgres só para
+      # o Airflow. Decisão documentada no README.
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      # A primeira inicialização do Airflow cria dezenas de permissões no
+      # banco interno (SQLite), uma escrita de cada vez -- em máquinas mais
+      # lentas isso pode passar do timeout padrão de 120s que o gunicorn
+      # espera pra confirmar que o webserver subiu, derrubando-o por engano
+      # mesmo sem erro real. Aumentado por segurança.
+      AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT: "300"
+      # Sobrescreve POSTGRES_HOST do .env: dentro da rede do Docker Compose,
+      # o banco é acessado pelo nome do serviço ("postgres"), não "localhost".
+      POSTGRES_HOST: postgres
+    env_file:
+      - .env
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - .:/opt/airflow/project
+      - airflow_home:/opt/airflow
+    ports:
+      - "8080:8080"
+    command: standalone
+
 volumes:
   postgres_data:
+  airflow_home:

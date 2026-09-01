@@ -78,9 +78,10 @@ Download manual (CSV)  →  dados_brutos/
           perguntas_negocio.sql  →  [Dashboard — a construir]
 ```
 
-Testes automatizados (`tests/`, Pytest) cobrem os scripts de ingestão,
-tratamento e modelagem em paralelo a esse fluxo, não como uma etapa
-sequencial do pipeline.
+Todo o fluxo acima (ingestão → silver → gold → testes → carga) é orquestrado
+por uma DAG do Apache Airflow (`dags/pipeline_compras_publicas.py`),
+também rodando em container Docker, com dependências entre tasks, retry
+automático e logs por execução.
 
 ## 5. Tecnologias utilizadas
 
@@ -94,7 +95,7 @@ sequencial do pipeline.
 | Docker / Docker Compose | Ambiente reproduzível do banco | ✅ em uso |
 | psycopg (v3) | Driver de conexão + carga via COPY | ✅ em uso |
 | Pytest | Testes automatizados (32 testes) | ✅ em uso |
-| Apache Airflow | Orquestração do pipeline | ⏳ a construir |
+| Apache Airflow | Orquestração do pipeline (5 tasks, retry, portão de qualidade) | ✅ em uso |
 | dbt | Modelos de transformação analítica | ⏳ a avaliar |
 | Power BI | Dashboard analítico | ⏳ a construir |
 
@@ -142,6 +143,30 @@ python carregar_postgres.py
 pytest tests/ -v
 ```
 
+### Alternativa: rodar tudo orquestrado pelo Airflow
+
+Em vez de rodar os scripts manualmente (passos 2-7 acima), o pipeline
+inteiro pode ser disparado como uma DAG única:
+
+```bash
+docker compose up -d --build   # sobe Postgres + Airflow
+# Acesse http://localhost:8080 (usuário admin, senha nos logs:
+# docker compose logs airflow | grep -i password)
+# Na interface: destrave (unpause) e dispare a DAG
+# "pipeline_compras_publicas"
+```
+
+Se a interface web não abrir (ver seção 15, Limitações), a mesma DAG pode
+ser disparada e acompanhada inteiramente via linha de comando, sem
+depender do navegador:
+
+```bash
+docker compose exec airflow airflow dags unpause pipeline_compras_publicas
+docker compose exec airflow airflow dags trigger pipeline_compras_publicas
+docker compose exec airflow airflow dags list-runs -d pipeline_compras_publicas
+docker compose exec airflow airflow tasks states-for-dag-run pipeline_compras_publicas "<run_id>"
+```
+
 ## 8. Explorando os dados manualmente
 
 Além de rodar os scripts, os dados de qualquer camada podem ser
@@ -178,10 +203,13 @@ Isso permite comparar uma mesma tabela entre camadas (ex.: quantas linhas
 │   ├── test_ingestao_bronze.py
 │   ├── test_transformar_silver.py
 │   └── test_transformar_gold.py
+├── dags/
+│   └── pipeline_compras_publicas.py  # DAG do Airflow: orquestra as 5 etapas
 ├── ingestao_bronze.py         # Ingestão: dados_brutos/ -> bronze/
 ├── transformar_silver.py      # Tratamento: bronze/ -> silver/
 ├── transformar_gold.py        # Modelagem dimensional: silver/ -> gold/ (fato/dimensões)
-├── docker-compose.yml         # Sobe o PostgreSQL
+├── docker-compose.yml         # Sobe o PostgreSQL e o Airflow
+├── Dockerfile.airflow         # Imagem do Airflow com as dependências do projeto
 ├── schema.sql                 # DDL do data warehouse (tabelas, PKs, FKs, índices)
 ├── carregar_postgres.py       # Carga da camada gold -> PostgreSQL (via COPY)
 ├── perguntas_negocio.sql      # As 10 perguntas de negócio do desafio, em SQL
@@ -272,6 +300,42 @@ segundos, então a demora não era proporcional ao poder de processamento.
 Reescrito para usar o comando nativo `COPY` do Postgres (via `psycopg`),
 reduzindo o tempo total de carga para poucos segundos.
 
+### Orquestração com Airflow: quatro problemas reais de ambiente, documentados
+
+Colocar o pipeline pra rodar dentro do Airflow (em container Docker, ao
+lado do Postgres) expôs uma sequência de problemas de ambiente, todos
+distintos entre si, resolvidos um a um:
+
+1. **Nome de arquivo case-sensitive**: `Dockerfile.airflow` foi salvo como
+   `dockerfile.airflow` (letra minúscula). Windows não diferencia
+   maiúscula/minúscula em nomes de arquivo, mas o Docker (que roda sobre
+   Linux por baixo, mesmo no Docker Desktop) diferencia — o build falhava
+   dizendo que o arquivo não existia.
+2. **Conflito de versão do `sqlalchemy`**: o `requirements.txt` do projeto
+   instalava `sqlalchemy==2.0.36` dentro da imagem do Airflow, mas o
+   próprio Airflow 2.10.4 depende internamente de `sqlalchemy < 2.0`. Como
+   nenhum script do projeto usa mais `sqlalchemy` diretamente (a carga usa
+   `psycopg` puro com `COPY`), a solução foi remover a dependência do
+   `requirements.txt` — ela era resíduo de uma versão anterior do
+   `carregar_postgres.py`.
+3. **Timeout do webserver na primeira inicialização**: o Airflow cria mais
+   de 150 permissões de acesso no banco interno (SQLite) na primeira
+   subida, uma escrita por vez — em máquinas com disco/CPU mais lentos,
+   isso ultrapassa o timeout padrão de 120s que o `gunicorn` espera antes
+   de considerar o processo travado. Aumentado para 300s
+   (`AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT`), mas a interface web
+   segue instável neste ambiente (ver Limitações) — o motor de execução
+   (scheduler) funciona normalmente de forma independente.
+4. **`shutil.copy2()`/`shutil.copy()` falhando dentro do container**: a
+   task de ingestão, ao rodar dentro do Airflow, falhava com
+   `PermissionError` ao copiar o arquivo da bronze. Causa: bind mounts do
+   Windows para containers Docker (via WSL2) não permitem que o container
+   altere metadados do arquivo (timestamp via `utime`, nem permissões via
+   `chmod`) através dessa ponte de sistemas de arquivos. Resolvido trocando
+   para `shutil.copyfile()`, que copia somente o conteúdo do arquivo, sem
+   tentar replicar metadados — o manifesto de ingestão já registra o
+   timestamp que importa (o da ingestão em si, não o do arquivo original).
+
 ## 12. Regras de Data Quality
 
 **Validações implementadas em cada camada:**
@@ -302,6 +366,13 @@ Os testes de regressão existem porque ambos os bugs que corrigem já
 aconteceram uma vez durante o desenvolvimento (ver seções 10 e 11) — cada
 um foi convertido num teste específico para não voltar a acontecer
 silenciosamente.
+
+**Testes como portão de qualidade na orquestração:** dentro da DAG do
+Airflow (`dags/pipeline_compras_publicas.py`), a task `testes_qualidade`
+roda os 32 testes entre a modelagem (gold) e a carga no banco. Se algum
+teste falhar, a carga nunca é executada — dados potencialmente incorretos
+não chegam ao data warehouse. Validado na prática: a DAG completa (5
+tasks) rodou com sucesso via linha de comando, incluindo essa etapa.
 
 ## 13. Perguntas de negócio
 
@@ -406,6 +477,15 @@ desenvolvimento.
 - Testes automatizados cobrem as funções de transformação isoladamente
   (com dados sintéticos), não ainda um teste de integração rodando o
   pipeline inteiro fim a fim contra o banco real.
+- Interface web do Airflow instável neste ambiente (Windows + Docker
+  Desktop + WSL2): a inicialização do webserver trava ou demora demais em
+  alguns boots, mesmo com o timeout aumentado. Causa mais provável:
+  recursos limitados alocados ao Docker Desktop combinados com a
+  sincronização inicial de permissões do Airflow no SQLite, que é
+  serializada (uma escrita por vez). **Não afeta a orquestração em si** —
+  o scheduler e o executor funcionam normalmente e de forma independente
+  do webserver; toda a DAG foi validada via linha de comando
+  (`airflow dags trigger`, `airflow tasks states-for-dag-run`).
 
 ## 16. Possíveis melhorias futuras
 
@@ -418,7 +498,10 @@ desenvolvimento.
   pergunta 7 de forma mais fiel à intenção original.
 - Teste de integração fim a fim (bronze → silver → gold → Postgres) contra
   um banco de testes descartável.
-- Orquestração via Apache Airflow, substituindo a execução manual dos
-  scripts em sequência.
+- Investigar e resolver a instabilidade da interface web do Airflow (mais
+  memória alocada ao Docker Desktop é o primeiro ponto a tentar).
+- Migrar o Airflow de `SequentialExecutor`/SQLite para `LocalExecutor` com
+  Postgres dedicado aos metadados, se o projeto crescer para múltiplas
+  DAGs concorrentes.
 - Dashboard (Power BI ou equivalente) consumindo as queries de
   `perguntas_negocio.sql`.

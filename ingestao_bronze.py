@@ -183,9 +183,15 @@ def processar_arquivo(caminho: Path) -> Optional[ResultadoIngestao]:
     diretorio_destino.mkdir(parents=True, exist_ok=True)
 
     caminho_destino = diretorio_destino / nome
-    # copy2 preserva metadados do arquivo original (timestamps) além do
-    # conteúdo -- reforça o princípio de preservar o dado bruto intacto.
-    shutil.copy2(caminho, caminho_destino)
+    # copyfile() em vez de copy()/copy2(): ambas as outras tentam replicar
+    # metadados do arquivo original (copy2 copia timestamp via utime,
+    # copy copia permissões via chmod) -- as duas falham com
+    # PermissionError nesse ambiente específico (bind mount Windows -> WSL2
+    # -> container Docker, que não permite alterar atributos de arquivo
+    # através da ponte de sistemas de arquivos). copyfile() copia somente
+    # bytes de conteúdo, sem tocar em metadados -- suficiente aqui, já que
+    # o manifesto abaixo registra nosso próprio timestamp de ingestão.
+    shutil.copyfile(caminho, caminho_destino)
 
     checksum = calcular_sha256(caminho_destino)
 
