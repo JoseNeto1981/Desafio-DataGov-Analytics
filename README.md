@@ -78,6 +78,10 @@ Download manual (CSV)  →  dados_brutos/
           perguntas_negocio.sql  →  [Dashboard — a construir]
 ```
 
+Testes automatizados (`tests/`, Pytest) cobrem os scripts de ingestão,
+tratamento e modelagem em paralelo a esse fluxo, não como uma etapa
+sequencial do pipeline.
+
 ## 5. Tecnologias utilizadas
 
 | Tecnologia | Uso | Status |
@@ -89,9 +93,9 @@ Download manual (CSV)  →  dados_brutos/
 | PostgreSQL | Data warehouse analítico | ✅ em uso |
 | Docker / Docker Compose | Ambiente reproduzível do banco | ✅ em uso |
 | psycopg (v3) | Driver de conexão + carga via COPY | ✅ em uso |
+| Pytest | Testes automatizados (32 testes) | ✅ em uso |
 | Apache Airflow | Orquestração do pipeline | ⏳ a construir |
 | dbt | Modelos de transformação analítica | ⏳ a avaliar |
-| Pytest | Testes automatizados | ⏳ a construir |
 | Power BI | Dashboard analítico | ⏳ a construir |
 
 ## 6. Instruções de instalação
@@ -133,9 +137,35 @@ python carregar_postgres.py
 # 7. Rode as perguntas de negócio (perguntas_negocio.sql) em qualquer
 #    cliente SQL (DBeaver, psql, extensão do VS Code, etc.), conectando com
 #    as credenciais do seu .env
+
+# 8. Rode os testes automatizados
+pytest tests/ -v
 ```
 
-## 8. Estrutura do projeto
+## 8. Explorando os dados manualmente
+
+Além de rodar os scripts, os dados de qualquer camada podem ser
+inspecionados visualmente — útil tanto para conferir o trabalho quanto
+para uma análise exploratória própria, sem escrever código.
+
+**Tabelas do data warehouse (Postgres):** qualquer cliente SQL serve.
+Usei o [DBeaver](https://dbeaver.io/download) (gratuito) durante o
+desenvolvimento: nova conexão → PostgreSQL → preencher host/porta/usuário/
+senha/banco com os mesmos valores do `.env` → as 7 tabelas aparecem em
+Esquemas > public > Tabelas.
+
+**Arquivos Parquet das camadas bronze/silver/gold**, sem precisar do banco:
+o DBeaver também consulta arquivos `.parquet` diretamente via uma conexão
+do tipo **DuckDB** (motor embutido, sem servidor, sem credenciais). Basta
+criar uma conexão DuckDB e rodar, por exemplo:
+```sql
+SELECT * FROM 'gold/dim_produto.parquet' LIMIT 20;
+```
+Isso permite comparar uma mesma tabela entre camadas (ex.: quantas linhas
+`silver/participantes_licitacao.parquet` tinha antes de virar
+`gold/fato_participacao.parquet`) sem escrever Python.
+
+## 9. Estrutura do projeto
 
 ```text
 .
@@ -143,6 +173,11 @@ python carregar_postgres.py
 ├── bronze/                    # Dados brutos organizados e particionados (não versionado)
 ├── silver/                    # Dados tratados em Parquet (não versionado)
 ├── gold/                      # Esquema estrela em Parquet (não versionado)
+├── tests/                     # Testes automatizados (Pytest)
+│   ├── conftest.py
+│   ├── test_ingestao_bronze.py
+│   ├── test_transformar_silver.py
+│   └── test_transformar_gold.py
 ├── ingestao_bronze.py         # Ingestão: dados_brutos/ -> bronze/
 ├── transformar_silver.py      # Tratamento: bronze/ -> silver/
 ├── transformar_gold.py        # Modelagem dimensional: silver/ -> gold/ (fato/dimensões)
@@ -158,7 +193,7 @@ python carregar_postgres.py
 └── README.md
 ```
 
-## 9. Modelo de dados
+## 10. Modelo de dados
 
 Esquema estrela com 5 dimensões e 2 tabelas fato, construído a partir da
 camada silver (`transformar_gold.py`) e materializado no PostgreSQL via
@@ -192,6 +227,8 @@ diferente (ex.: o número `000142023` existe tanto como Pregão quanto como
 Dispensa de Licitação, na mesma UG). A chave de negócio correta é
 `Número Licitação` + `Código UG` + `Código Modalidade Compra` — sem isso,
 itens de uma licitação seriam vinculados por engano aos atributos da outra.
+Esse comportamento tem um teste de regressão dedicado em
+`tests/test_transformar_gold.py`.
 
 ### Decisão de modelagem: união de fontes para `dim_fornecedor` e `dim_produto`
 
@@ -200,9 +237,9 @@ espelhado idêntico na tabela de Itens (31 descrições de produto e alguns
 fornecedores só existem em um dos dois). Por isso, as duas dimensões são
 construídas como união das duas fontes — evita que `fato_participacao`
 fique com chaves estrangeiras nulas por um item que só foi "visto" do lado
-da disputa, não do lado do vencedor.
+da disputa, não do lado do vencedor. Também coberto por teste de regressão.
 
-## 10. Decisões técnicas e regras de tratamento
+## 11. Decisões técnicas e regras de tratamento
 
 Todas as regras abaixo foram definidas depois de inspecionar os dados reais
 (não escritas antecipadamente "no escuro"). Números referem-se à amostra de
@@ -235,19 +272,38 @@ segundos, então a demora não era proporcional ao poder de processamento.
 Reescrito para usar o comando nativo `COPY` do Postgres (via `psycopg`),
 reduzindo o tempo total de carga para poucos segundos.
 
-## 11. Regras de Data Quality
+## 12. Regras de Data Quality
 
-*A expandir na etapa de testes automatizados (Pytest).* Validações já
-implementadas:
+**Validações implementadas em cada camada:**
 - **Ingestão (bronze):** verificação de colunas obrigatórias por dataset,
   arquivo rejeitado se schema divergir do esperado.
 - **Tratamento (silver):** relatório de qualidade com contagem de nulos
   corrigidos, duplicados removidos, valores negativos e inconsistências de
   identificador, por dataset (`silver/_relatorio_qualidade.json`).
 - **Análise (gold/SQL):** detecção estatística de anomalias de preço
-  (perguntas 8 e 10 — ver critério abaixo).
+  (perguntas 8 e 10 — critério de 2 desvios-padrão acima da média do
+  produto, com mínimo de 5 ocorrências).
 
-## 12. Perguntas de negócio
+**Testes automatizados (`tests/`, Pytest — 32 testes, todos passando):**
+- `test_ingestao_bronze.py`: reconhecimento de nome de arquivo, validação
+  de schema obrigatório, cálculo de checksum, fluxo completo de ingestão
+  (sucesso, schema inválido, reprocessamento idempotente).
+- `test_transformar_silver.py`: conversões de valor/data/texto, regras de
+  UF inválida/valor negativo/duplicado, e um **teste de regressão** para o
+  bug de ordem de operações entre deduplicação e geração de chave
+  substituta (ver seção 11).
+- `test_transformar_gold.py`: classificação de tipo de documento, e dois
+  **testes de regressão** — chave composta da licitação (seção 10) e união
+  de fontes em `dim_produto`/`dim_fornecedor` (seção 10) — além de um teste
+  de integridade referencial fim a fim (nenhuma chave estrangeira nula em
+  `fato_item_licitacao` com dados consistentes).
+
+Os testes de regressão existem porque ambos os bugs que corrigem já
+aconteceram uma vez durante o desenvolvimento (ver seções 10 e 11) — cada
+um foi convertido num teste específico para não voltar a acontecer
+silenciosamente.
+
+## 13. Perguntas de negócio
 
 Todas as queries estão em `perguntas_negocio.sql`. Resultados abaixo com o
 conjunto completo de dados (4 meses, janeiro a abril de 2024).
@@ -316,7 +372,7 @@ valor) do que superfaturamento real — mas fica sinalizado para
 investigação humana, que é justamente o objetivo de uma regra de anomalia:
 apontar candidatos, não emitir veredito automático.
 
-## 13. Resultados obtidos
+## 14. Resultados obtidos
 
 O pipeline processa com sucesso 4 meses de dados de licitações federais
 (~215 mil linhas nas camadas silver/gold, ~213 mil linhas de fato no data
@@ -325,9 +381,11 @@ volume financeiro por sediar órgãos federais, RJ liderando em diversidade
 de fornecedores) e identificando pelo menos um caso concreto de possível
 erro de digitação nos dados de origem através da regra estatística de
 anomalia — validando que o pipeline não só processa os dados, mas gera
-achados acionáveis.
+achados acionáveis. Os 32 testes automatizados (Pytest) passam, incluindo
+3 testes de regressão para bugs reais encontrados e corrigidos durante o
+desenvolvimento.
 
-## 14. Limitações
+## 15. Limitações
 
 - API do PNCP apresentou instabilidade persistente durante o
   desenvolvimento — não utilizada como fonte principal (ver seção 3).
@@ -345,8 +403,11 @@ achados acionáveis.
 - Detecção de anomalias de preço é estatística (desvio-padrão), não
   semântica — não distingue erro de digitação de superfaturamento real;
   ambos requerem investigação humana adicional.
+- Testes automatizados cobrem as funções de transformação isoladamente
+  (com dados sintéticos), não ainda um teste de integração rodando o
+  pipeline inteiro fim a fim contra o banco real.
 
-## 15. Possíveis melhorias futuras
+## 16. Possíveis melhorias futuras
 
 - Destravar a API do Portal da Transparência e automatizar a ingestão
   (elimina a etapa manual de download).
@@ -355,8 +416,8 @@ achados acionáveis.
 - Implementar carga incremental diária (ver desafio adicional).
 - Cruzar com um catálogo de categorias (CATMAT/CATSER) para responder a
   pergunta 7 de forma mais fiel à intenção original.
-- Testes automatizados (Pytest) cobrindo ingestão, tratamento e regras de
-  qualidade.
+- Teste de integração fim a fim (bronze → silver → gold → Postgres) contra
+  um banco de testes descartável.
 - Orquestração via Apache Airflow, substituindo a execução manual dos
   scripts em sequência.
 - Dashboard (Power BI ou equivalente) consumindo as queries de
