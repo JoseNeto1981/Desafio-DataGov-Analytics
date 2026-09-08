@@ -3,10 +3,11 @@
 > Projeto desenvolvido como parte de um desafio técnico de Engenharia de
 > Dados. Constrói um pipeline de ponta a ponta sobre dados públicos de
 > licitações do Governo Federal brasileiro: ingestão → bronze → silver →
-> gold → data warehouse → análise.
+> gold → data warehouse → análise → dashboard.
 >
-> **Status:** em desenvolvimento. Este README é um documento vivo, atualizado
-> conforme cada etapa do pipeline é construída.
+> **Status:** todos os requisitos técnicos obrigatórios do desafio
+> concluídos. Este README é um documento vivo, atualizado conforme cada
+> etapa do pipeline foi construída.
 
 ---
 
@@ -21,8 +22,8 @@ formatos inconsistentes e não estruturados para análise direta.
 
 Construir uma plataforma de dados capaz de: obter dados de fontes públicas,
 armazená-los brutos, tratá-los e padronizá-los, validar sua qualidade,
-disponibilizá-los em um modelo analítico, e responder perguntas de negócio
-sobre compras públicas.
+disponibilizá-los em um modelo analítico, responder perguntas de negócio e
+apresentar os principais indicadores por meio de um dashboard.
 
 ## 3. Fonte dos dados
 
@@ -75,13 +76,15 @@ Download manual (CSV)  →  dados_brutos/
                               ↓
               PostgreSQL (Docker) — schema.sql aplicado
                               ↓
-          perguntas_negocio.sql  →  [Dashboard — a construir]
+      perguntas_negocio.sql  +  vw_anomalias_precos.sql
+                              ↓
+                  Dashboard (Power BI) — dashboard/
 ```
 
-Todo o fluxo acima (ingestão → silver → gold → testes → carga) é orquestrado
-por uma DAG do Apache Airflow (`dags/pipeline_compras_publicas.py`),
-também rodando em container Docker, com dependências entre tasks, retry
-automático e logs por execução.
+Todo o fluxo acima (ingestão → silver → gold → testes → carga) é
+orquestrado por uma DAG do Apache Airflow
+(`dags/pipeline_compras_publicas.py`), também rodando em container Docker,
+com dependências entre tasks, retry automático e logs por execução.
 
 ## 5. Tecnologias utilizadas
 
@@ -92,12 +95,12 @@ automático e logs por execução.
 | pyarrow | Escrita em formato Parquet (camada silver/gold) | ✅ em uso |
 | requests | Chamadas HTTP (exploração de API) | ✅ em uso |
 | PostgreSQL | Data warehouse analítico | ✅ em uso |
-| Docker / Docker Compose | Ambiente reproduzível do banco | ✅ em uso |
+| Docker / Docker Compose | Ambiente reproduzível do banco e do Airflow | ✅ em uso |
 | psycopg (v3) | Driver de conexão + carga via COPY | ✅ em uso |
 | Pytest | Testes automatizados (32 testes) | ✅ em uso |
 | Apache Airflow | Orquestração do pipeline (5 tasks, retry, portão de qualidade) | ✅ em uso |
+| Power BI | Dashboard analítico (5 páginas) | ✅ em uso |
 | dbt | Modelos de transformação analítica | ⏳ a avaliar |
-| Power BI | Dashboard analítico | ⏳ a construir |
 
 ## 6. Instruções de instalação
 
@@ -135,18 +138,20 @@ docker compose up -d
 # 6. Carregue a camada gold no banco
 python carregar_postgres.py
 
-# 7. Rode as perguntas de negócio (perguntas_negocio.sql) em qualquer
-#    cliente SQL (DBeaver, psql, extensão do VS Code, etc.), conectando com
-#    as credenciais do seu .env
+# 7. Aplique a view de anomalias de preço
+docker exec -i datagov_postgres psql -U datagov -d datagov_dw < vw_anomalias_precos.sql
 
-# 8. Rode os testes automatizados
+# 8. Rode as perguntas de negócio (perguntas_negocio.sql) em qualquer
+#    cliente SQL (DBeaver, psql, extensão do VS Code, etc.)
+
+# 9. Rode os testes automatizados
 pytest tests/ -v
+
+# 10. Abra dashboard/datagov.pbix no Power BI Desktop (conecte no
+#     Postgres com as credenciais do seu .env)
 ```
 
 ### Alternativa: rodar tudo orquestrado pelo Airflow
-
-Em vez de rodar os scripts manualmente (passos 2-7 acima), o pipeline
-inteiro pode ser disparado como uma DAG única:
 
 ```bash
 docker compose up -d --build   # sobe Postgres + Airflow
@@ -156,9 +161,8 @@ docker compose up -d --build   # sobe Postgres + Airflow
 # "pipeline_compras_publicas"
 ```
 
-Se a interface web não abrir (ver seção 15, Limitações), a mesma DAG pode
-ser disparada e acompanhada inteiramente via linha de comando, sem
-depender do navegador:
+Se a interface web não abrir (ver seção 16, Limitações), a mesma DAG pode
+ser disparada e acompanhada inteiramente via linha de comando:
 
 ```bash
 docker compose exec airflow airflow dags unpause pipeline_compras_publicas
@@ -176,7 +180,7 @@ para uma análise exploratória própria, sem escrever código.
 **Tabelas do data warehouse (Postgres):** qualquer cliente SQL serve.
 Usei o [DBeaver](https://dbeaver.io/download) (gratuito) durante o
 desenvolvimento: nova conexão → PostgreSQL → preencher host/porta/usuário/
-senha/banco com os mesmos valores do `.env` → as 7 tabelas aparecem em
+senha/banco com os mesmos valores do `.env` → as tabelas aparecem em
 Esquemas > public > Tabelas.
 
 **Arquivos Parquet das camadas bronze/silver/gold**, sem precisar do banco:
@@ -186,9 +190,11 @@ criar uma conexão DuckDB e rodar, por exemplo:
 ```sql
 SELECT * FROM 'gold/dim_produto.parquet' LIMIT 20;
 ```
-Isso permite comparar uma mesma tabela entre camadas (ex.: quantas linhas
-`silver/participantes_licitacao.parquet` tinha antes de virar
-`gold/fato_participacao.parquet`) sem escrever Python.
+
+**O dashboard**, sem precisar do Power BI instalado: ver
+[`dashboard/dashboard.md`](dashboard/dashboard.md), que descreve cada
+página e linka o PDF exportado (`dashboard/datagov.pdf`), renderizado
+inline pelo próprio GitHub.
 
 ## 9. Estrutura do projeto
 
@@ -205,12 +211,17 @@ Isso permite comparar uma mesma tabela entre camadas (ex.: quantas linhas
 │   └── test_transformar_gold.py
 ├── dags/
 │   └── pipeline_compras_publicas.py  # DAG do Airflow: orquestra as 5 etapas
+├── dashboard/
+│   ├── datagov.pbix          # Dashboard Power BI (5 páginas)
+│   ├── datagov.pdf           # Exportação em PDF (visualizável no GitHub)
+│   └── dashboard.md            # Descrição de cada página e principais achados
 ├── ingestao_bronze.py         # Ingestão: dados_brutos/ -> bronze/
 ├── transformar_silver.py      # Tratamento: bronze/ -> silver/
 ├── transformar_gold.py        # Modelagem dimensional: silver/ -> gold/ (fato/dimensões)
 ├── docker-compose.yml         # Sobe o PostgreSQL e o Airflow
 ├── Dockerfile.airflow         # Imagem do Airflow com as dependências do projeto
 ├── schema.sql                 # DDL do data warehouse (tabelas, PKs, FKs, índices)
+├── vw_anomalias_precos.sql     # View de detecção de anomalias de preço (fonte única de verdade)
 ├── carregar_postgres.py       # Carga da camada gold -> PostgreSQL (via COPY)
 ├── perguntas_negocio.sql      # As 10 perguntas de negócio do desafio, em SQL
 ├── explorar_pncp.py           # Script exploratório da API do PNCP (descontinuada como fonte principal)
@@ -288,6 +299,7 @@ conjunto completo de dados.
 | Valores negativos | 0 encontrados na amostra | Regra de remoção implementada preventivamente |
 | `EmpenhosRelacionados` vazio | 0 registros em janeiro/2024 | Mantido na pipeline com schema vazio (não é falha — período realmente não teve empenho vinculado) |
 | Chave estrangeira nula em COPY | Colunas `sk_*` com nulos viravam `5125.0` em vez de `5125` no CSV gerado pelo pandas, rejeitado pelo Postgres | Conversão explícita para o tipo `Int64` (inteiro anulável) antes do `COPY` |
+| `shutil.copy2()`/`shutil.copy()` falhando em bind mount Windows->Docker | `PermissionError` ao ingerir dentro do container Airflow (a ponte de sistemas de arquivos não permite alterar timestamp/permissão) | Trocado para `shutil.copyfile()`, que copia só o conteúdo, sem metadados |
 
 ### Otimização de carga: INSERT em lote vs. COPY
 
@@ -326,15 +338,19 @@ distintos entre si, resolvidos um a um:
    (`AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT`), mas a interface web
    segue instável neste ambiente (ver Limitações) — o motor de execução
    (scheduler) funciona normalmente de forma independente.
-4. **`shutil.copy2()`/`shutil.copy()` falhando dentro do container**: a
-   task de ingestão, ao rodar dentro do Airflow, falhava com
-   `PermissionError` ao copiar o arquivo da bronze. Causa: bind mounts do
-   Windows para containers Docker (via WSL2) não permitem que o container
-   altere metadados do arquivo (timestamp via `utime`, nem permissões via
-   `chmod`) através dessa ponte de sistemas de arquivos. Resolvido trocando
-   para `shutil.copyfile()`, que copia somente o conteúdo do arquivo, sem
-   tentar replicar metadados — o manifesto de ingestão já registra o
-   timestamp que importa (o da ingestão em si, não o do arquivo original).
+4. **`shutil.copy2()`/`shutil.copy()` falhando dentro do container**: ver
+   tabela de decisões de tratamento acima.
+
+### Dashboard: por que uma view SQL, e não uma medida DAX, para anomalias
+
+A regra de anomalia de preço (2 desvios-padrão acima da média do produto,
+mínimo 5 ocorrências) já estava definida e testada em SQL
+(`perguntas_negocio.sql`, perguntas 8 e 10). Em vez de recalcular a mesma
+fórmula em DAX dentro do Power BI — o que criaria duas versões da mesma
+lógica de negócio, com risco de divergência se o critério for ajustado um
+dia — foi criada a view `vw_anomalias_precos.sql`, que centraliza a regra
+no banco. O Power BI só importa o resultado já calculado. Ver
+`dashboard/dashboard.md` para detalhes.
 
 ## 12. Regras de Data Quality
 
@@ -345,8 +361,7 @@ distintos entre si, resolvidos um a um:
   corrigidos, duplicados removidos, valores negativos e inconsistências de
   identificador, por dataset (`silver/_relatorio_qualidade.json`).
 - **Análise (gold/SQL):** detecção estatística de anomalias de preço
-  (perguntas 8 e 10 — critério de 2 desvios-padrão acima da média do
-  produto, com mínimo de 5 ocorrências).
+  (`vw_anomalias_precos.sql`, e perguntas 8/10 de `perguntas_negocio.sql`).
 
 **Testes automatizados (`tests/`, Pytest — 32 testes, todos passando):**
 - `test_ingestao_bronze.py`: reconhecimento de nome de arquivo, validação
@@ -357,22 +372,15 @@ distintos entre si, resolvidos um a um:
   bug de ordem de operações entre deduplicação e geração de chave
   substituta (ver seção 11).
 - `test_transformar_gold.py`: classificação de tipo de documento, e dois
-  **testes de regressão** — chave composta da licitação (seção 10) e união
-  de fontes em `dim_produto`/`dim_fornecedor` (seção 10) — além de um teste
-  de integridade referencial fim a fim (nenhuma chave estrangeira nula em
-  `fato_item_licitacao` com dados consistentes).
-
-Os testes de regressão existem porque ambos os bugs que corrigem já
-aconteceram uma vez durante o desenvolvimento (ver seções 10 e 11) — cada
-um foi convertido num teste específico para não voltar a acontecer
-silenciosamente.
+  **testes de regressão** — chave composta da licitação e união de fontes
+  em `dim_produto`/`dim_fornecedor` (seção 10) — além de um teste de
+  integridade referencial fim a fim.
 
 **Testes como portão de qualidade na orquestração:** dentro da DAG do
-Airflow (`dags/pipeline_compras_publicas.py`), a task `testes_qualidade`
-roda os 32 testes entre a modelagem (gold) e a carga no banco. Se algum
-teste falhar, a carga nunca é executada — dados potencialmente incorretos
-não chegam ao data warehouse. Validado na prática: a DAG completa (5
-tasks) rodou com sucesso via linha de comando, incluindo essa etapa.
+Airflow, a task `testes_qualidade` roda os 32 testes entre a modelagem
+(gold) e a carga no banco. Se algum teste falhar, a carga nunca é
+executada. Validado na prática: a DAG completa (5 tasks) rodou com sucesso
+via linha de comando.
 
 ## 13. Perguntas de negócio
 
@@ -405,13 +413,10 @@ de ministérios e órgãos federais.
 
 Queda acentuada em abril (valor e quantidade de itens caem juntos, na
 mesma proporção aproximada) — indício de que abril pode ter dados parciais
-na fonte, não necessariamente uma queda real de compras. Investigar se
-mais dados de abril foram publicados depois da extração.
+na fonte, não necessariamente uma queda real de compras.
 
 **5. Preço médio dos produtos/serviços:**
-R$ 35.002,08 por item (média geral). Por produto individual, ver a query
-completa — produtos com poucas ocorrências têm médias pouco confiáveis
-estatisticamente, por isso a query filtra produtos com 5+ compras.
+R$ 35.002,08 por item (média geral).
 
 **6. Órgãos com maior volume de compras:**
 Companhia de Desenvolvimento dos Vales do São Francisco (R$ 1,51 bi),
@@ -427,8 +432,7 @@ equivalente à pergunta 1.
 Critério: valor unitário acima de 2 desvios-padrão da média do produto
 (produtos com 5+ ocorrências). O caso mais extremo: HYDROSTEC Tecnologia e
 Equipamentos vendendo uma "Conexão Hidráulica" por R$ 2.175.000,00, quando
-a média desse item é R$ 1.090,73 (~44,96 desvios-padrão acima — ver
-pergunta 10 para discussão).
+a média desse item é R$ 1.090,73 (~44,96 desvios-padrão acima).
 
 **9. Estados com maior quantidade de fornecedores distintos:**
 RJ lidera com 6.001 fornecedores distintos disputando licitações,
@@ -438,12 +442,21 @@ critério, ao contrário do que se veria olhando só valor financeiro (Q3).
 **10. Possíveis anomalias de preço:**
 O mesmo caso da pergunta 8 (HYDROSTEC / Conexão Hidráulica, ~45
 desvios-padrão) é o mais extremo do conjunto. Tem características mais
-consistentes com **erro de digitação na fonte** (ex.: dígitos extras no
-valor) do que superfaturamento real — mas fica sinalizado para
-investigação humana, que é justamente o objetivo de uma regra de anomalia:
-apontar candidatos, não emitir veredito automático.
+consistentes com **erro de digitação na fonte** do que superfaturamento
+real — sinalizado para investigação humana. Ver também `dashboard/`,
+página 5.
 
-## 14. Resultados obtidos
+## 14. Dashboard
+
+Construído em Power BI Desktop, conectado ao PostgreSQL (modo Importar).
+5 páginas, organizadas por tema: Visão Geral, Distribuição Geográfica,
+Fornecedores e Produtos, Análise de Preços, Anomalias de Preço.
+
+Ver **[`dashboard/dashboard.md`](dashboard/dashboard.md)** para a descrição
+completa de cada página, principais achados, e o PDF exportado
+(visualizável direto no GitHub, sem precisar do Power BI instalado).
+
+## 15. Resultados obtidos
 
 O pipeline processa com sucesso 4 meses de dados de licitações federais
 (~215 mil linhas nas camadas silver/gold, ~213 mil linhas de fato no data
@@ -452,42 +465,33 @@ volume financeiro por sediar órgãos federais, RJ liderando em diversidade
 de fornecedores) e identificando pelo menos um caso concreto de possível
 erro de digitação nos dados de origem através da regra estatística de
 anomalia — validando que o pipeline não só processa os dados, mas gera
-achados acionáveis. Os 32 testes automatizados (Pytest) passam, incluindo
-3 testes de regressão para bugs reais encontrados e corrigidos durante o
-desenvolvimento.
+achados acionáveis, visíveis tanto em SQL quanto no dashboard final. Os 32
+testes automatizados (Pytest) passam, incluindo 3 testes de regressão para
+bugs reais encontrados e corrigidos durante o desenvolvimento.
 
-## 15. Limitações
+## 16. Limitações
 
 - API do PNCP apresentou instabilidade persistente durante o
   desenvolvimento — não utilizada como fonte principal (ver seção 3).
 - API do Portal da Transparência com autenticação não pôde ser
-  destravada durante o desenvolvimento (erro genérico de autenticação
-  mesmo após elevação de nível da conta gov.br) — ingestão atual depende
-  de download manual dos arquivos CSV.
-- Dados limitados aos 4 meses disponíveis de 2024 no formato de download em
-  lote usado. Abril, em particular, parece ter volume de dados parcial
-  (queda desproporcional de valor e quantidade de itens — ver pergunta 4).
-- `EmpenhosRelacionados` sem dados no período analisado — execução
-  financeira (empenhado x pago) não pôde ser cruzada com as licitações.
-- Sem catálogo de categorias (tipo CATMAT/CATSER) na fonte usada — a
-  pergunta de negócio sobre "categorias" foi respondida no nível de produto.
+  destravada durante o desenvolvimento — ingestão atual depende de
+  download manual dos arquivos CSV.
+- Dados limitados aos 4 meses disponíveis de 2024. Abril, em particular,
+  parece ter volume de dados parcial (ver pergunta 4).
+- `EmpenhosRelacionados` sem dados no período analisado.
+- Sem catálogo de categorias (tipo CATMAT/CATSER) na fonte usada.
 - Detecção de anomalias de preço é estatística (desvio-padrão), não
-  semântica — não distingue erro de digitação de superfaturamento real;
-  ambos requerem investigação humana adicional.
+  semântica — não distingue erro de digitação de superfaturamento real.
 - Testes automatizados cobrem as funções de transformação isoladamente
   (com dados sintéticos), não ainda um teste de integração rodando o
   pipeline inteiro fim a fim contra o banco real.
 - Interface web do Airflow instável neste ambiente (Windows + Docker
   Desktop + WSL2): a inicialização do webserver trava ou demora demais em
-  alguns boots, mesmo com o timeout aumentado. Causa mais provável:
-  recursos limitados alocados ao Docker Desktop combinados com a
-  sincronização inicial de permissões do Airflow no SQLite, que é
-  serializada (uma escrita por vez). **Não afeta a orquestração em si** —
-  o scheduler e o executor funcionam normalmente e de forma independente
-  do webserver; toda a DAG foi validada via linha de comando
-  (`airflow dags trigger`, `airflow tasks states-for-dag-run`).
+  alguns boots, mesmo com o timeout aumentado. **Não afeta a orquestração
+  em si** — o scheduler e o executor funcionam normalmente e de forma
+  independente do webserver; toda a DAG foi validada via linha de comando.
 
-## 16. Possíveis melhorias futuras
+## 17. Possíveis melhorias futuras
 
 - Destravar a API do Portal da Transparência e automatizar a ingestão
   (elimina a etapa manual de download).
@@ -503,5 +507,5 @@ desenvolvimento.
 - Migrar o Airflow de `SequentialExecutor`/SQLite para `LocalExecutor` com
   Postgres dedicado aos metadados, se o projeto crescer para múltiplas
   DAGs concorrentes.
-- Dashboard (Power BI ou equivalente) consumindo as queries de
-  `perguntas_negocio.sql`.
+- No dashboard, ordenar a página "Análise de Preços" por valor decrescente
+  (atualmente navegável alfabeticamente por item).
