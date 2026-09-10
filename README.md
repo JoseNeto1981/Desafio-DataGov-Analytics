@@ -76,7 +76,7 @@ Download manual (CSV)  →  dados_brutos/
                               ↓
               PostgreSQL (Docker) — schema.sql aplicado
                               ↓
-      perguntas_negocio.sql  +  vw_anomalias_precos.sql
+      perguntas_negocio.sql  +  vw_anomalias_preco.sql
                               ↓
                   Dashboard (Power BI) — dashboard/
 ```
@@ -139,7 +139,7 @@ docker compose up -d
 python carregar_postgres.py
 
 # 7. Aplique a view de anomalias de preço
-docker exec -i datagov_postgres psql -U datagov -d datagov_dw < vw_anomalias_precos.sql
+docker exec -i datagov_postgres psql -U datagov -d datagov_dw < vw_anomalias_preco.sql
 
 # 8. Rode as perguntas de negócio (perguntas_negocio.sql) em qualquer
 #    cliente SQL (DBeaver, psql, extensão do VS Code, etc.)
@@ -221,7 +221,7 @@ inline pelo próprio GitHub.
 ├── docker-compose.yml         # Sobe o PostgreSQL e o Airflow
 ├── Dockerfile.airflow         # Imagem do Airflow com as dependências do projeto
 ├── schema.sql                 # DDL do data warehouse (tabelas, PKs, FKs, índices)
-├── vw_anomalias_precos.sql     # View de detecção de anomalias de preço (fonte única de verdade)
+├── vw_anomalias_preco.sql     # View de detecção de anomalias de preço (fonte única de verdade)
 ├── carregar_postgres.py       # Carga da camada gold -> PostgreSQL (via COPY)
 ├── perguntas_negocio.sql      # As 10 perguntas de negócio do desafio, em SQL
 ├── explorar_pncp.py           # Script exploratório da API do PNCP (descontinuada como fonte principal)
@@ -348,7 +348,7 @@ mínimo 5 ocorrências) já estava definida e testada em SQL
 (`perguntas_negocio.sql`, perguntas 8 e 10). Em vez de recalcular a mesma
 fórmula em DAX dentro do Power BI — o que criaria duas versões da mesma
 lógica de negócio, com risco de divergência se o critério for ajustado um
-dia — foi criada a view `vw_anomalias_precos.sql`, que centraliza a regra
+dia — foi criada a view `vw_anomalias_preco.sql`, que centraliza a regra
 no banco. O Power BI só importa o resultado já calculado. Ver
 `dashboard/dashboard.md` para detalhes.
 
@@ -361,7 +361,7 @@ no banco. O Power BI só importa o resultado já calculado. Ver
   corrigidos, duplicados removidos, valores negativos e inconsistências de
   identificador, por dataset (`silver/_relatorio_qualidade.json`).
 - **Análise (gold/SQL):** detecção estatística de anomalias de preço
-  (`vw_anomalias_precos.sql`, e perguntas 8/10 de `perguntas_negocio.sql`).
+  (`vw_anomalias_preco.sql`, e perguntas 8/10 de `perguntas_negocio.sql`).
 
 **Testes automatizados (`tests/`, Pytest — 32 testes, todos passando):**
 - `test_ingestao_bronze.py`: reconhecimento de nome de arquivo, validação
@@ -497,7 +497,8 @@ bugs reais encontrados e corrigidos durante o desenvolvimento.
   (elimina a etapa manual de download).
 - Reavaliar o PNCP como fonte secundária/complementar quando estabilizar.
 - Estender a cobertura temporal além dos 4 meses atuais.
-- Implementar carga incremental diária (ver desafio adicional).
+- Implementar de fato a estratégia de carga incremental descrita na
+  seção 18 (hoje documentada, não implementada — ver justificativa lá).
 - Cruzar com um catálogo de categorias (CATMAT/CATSER) para responder a
   pergunta 7 de forma mais fiel à intenção original.
 - Teste de integração fim a fim (bronze → silver → gold → Postgres) contra
@@ -509,3 +510,19 @@ bugs reais encontrados e corrigidos durante o desenvolvimento.
   DAGs concorrentes.
 - No dashboard, ordenar a página "Análise de Preços" por valor decrescente
   (atualmente navegável alfabeticamente por item).
+
+## 18. Desafio adicional: estratégia de carga incremental
+
+Ver **[`estrategia_carga_incremental.md`](estrategia_carga_incremental.md)**
+para a estratégia completa de carga incremental (processar diariamente só
+dados novos/alterados) e como garantir consistência caso o pipeline falhe
+no meio da execução — entrega da seção 22 do desafio original.
+
+**Resumo:** a versão atual do pipeline reprocessa o histórico completo em
+cada execução (decisão consciente para esta fase — a fonte de dados é
+atualizada manualmente, em lotes mensais, não diariamente). A estratégia
+documentada cobre watermark por período, chaves substitutas estáveis
+(buscar-ou-criar em vez de recriar), UPSERT no lugar de TRUNCATE, e quatro
+mecanismos de consistência: escrita atômica de arquivo, transações no
+Postgres, idempotência ponta a ponta, e uma tabela de controle de
+execução.
