@@ -59,9 +59,7 @@ def carregar_silver() -> dict:
     return tabelas
 
 
-# --------------------------------------------------------------------------
 # Construção das dimensões
-# --------------------------------------------------------------------------
 
 def construir_dim_tempo(licitacoes: pd.DataFrame) -> pd.DataFrame:
     datas = licitacoes["Data Resultado Compra"].dropna().dt.normalize().unique()
@@ -133,11 +131,7 @@ def _classificar_documento(codigo) -> str:
 
 
 def construir_dim_produto(itens: pd.DataFrame, participantes: pd.DataFrame) -> pd.DataFrame:
-    # Construída a partir da união das duas tabelas -- algumas descrições
-    # só aparecem em Participantes (o item teve disputa registrada, mas por
-    # algum motivo não ficou com o mesmo registro espelhado em Itens).
-    # Sem essa união, ~377 linhas de fato_participacao ficariam com
-    # sk_produto nulo -- achado real ao validar a primeira versão deste script.
+    
     de_itens = itens[["Descrição"]].rename(columns={"Descrição": "descricao_item"})
     de_participantes = participantes[["Descrição Item Compra"]].rename(
         columns={"Descrição Item Compra": "descricao_item"}
@@ -152,11 +146,7 @@ def construir_dim_licitacao(licitacoes: pd.DataFrame) -> pd.DataFrame:
         "Número Licitação", "Código UG", "Código Modalidade Compra", "Número Processo",
         "Modalidade Compra", "Situação Licitação", "Objeto", "Valor Licitação",
     ]
-    # A chave de negócio precisa incluir a modalidade: encontramos 13 casos
-    # em que o mesmo Número Licitação + Código UG se repete com modalidades
-    # diferentes (ex.: "000142023" existe como Pregão E como Dispensa na
-    # mesma UG). Sem a modalidade na chave, itens de uma licitação
-    # acabariam vinculados aos atributos da outra por engano.
+
     chave = ["Número Licitação", "Código UG", "Código Modalidade Compra"]
     dim = licitacoes[colunas].drop_duplicates(subset=chave).reset_index(drop=True)
     dim["sk_licitacao"] = range(1, len(dim) + 1)
@@ -169,9 +159,7 @@ def construir_dim_licitacao(licitacoes: pd.DataFrame) -> pd.DataFrame:
         "modalidade_compra", "situacao_licitacao", "objeto", "valor_licitacao"]]
 
 
-# --------------------------------------------------------------------------
 # Construção das tabelas fato
-# --------------------------------------------------------------------------
 
 def construir_fato_item(
     itens: pd.DataFrame, licitacoes: pd.DataFrame, dim_tempo, dim_orgao, dim_fornecedor, dim_produto, dim_licitacao
@@ -254,9 +242,7 @@ def construir_fato_participacao(
     return fato[["sk_licitacao", "sk_produto", "sk_fornecedor", "flag_vencedor"]]
 
 
-# --------------------------------------------------------------------------
 # Orquestração
-# --------------------------------------------------------------------------
 
 def main() -> None:
     tabelas = carregar_silver()

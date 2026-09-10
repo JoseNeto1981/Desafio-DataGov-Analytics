@@ -14,9 +14,8 @@ import pytest
 import ingestao_bronze as bronze
 
 
-# ----------------------------------------------------------------------------
 # Padrão de nome de arquivo
-# ----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("nome,deve_casar", [
     ("202401_Licitação.csv", True),
@@ -30,9 +29,8 @@ def test_padrao_nome_arquivo(nome, deve_casar):
     assert (resultado is not None) == deve_casar
 
 
-# ----------------------------------------------------------------------------
 # Validação de colunas obrigatórias
-# ----------------------------------------------------------------------------
+
 
 def test_validar_colunas_todas_presentes():
     cabecalho = ["Número Licitação", "Código UG", "Código Órgão", "UF", "Valor Licitação", "Extra"]
@@ -46,9 +44,7 @@ def test_validar_colunas_uma_faltando():
     assert faltando == ["UF"]
 
 
-# ----------------------------------------------------------------------------
 # Checksum
-# ----------------------------------------------------------------------------
 
 def test_calcular_sha256_e_deterministico(tmp_path):
     arquivo = tmp_path / "teste.csv"
@@ -68,9 +64,7 @@ def test_calcular_sha256_muda_com_conteudo_diferente(tmp_path):
     assert bronze.calcular_sha256(arquivo1) != bronze.calcular_sha256(arquivo2)
 
 
-# ----------------------------------------------------------------------------
-# processar_arquivo -- fim a fim, usando pastas temporárias
-# ----------------------------------------------------------------------------
+# Processar_arquivo -- fim a fim, usando pastas temporárias
 
 def _escrever_csv_licitacao_valido(caminho, linhas: int = 2):
     colunas = [

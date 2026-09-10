@@ -11,9 +11,8 @@ import pandas as pd
 import transformar_silver as silver
 
 
-# ----------------------------------------------------------------------------
 # Funções auxiliares de conversão
-# ----------------------------------------------------------------------------
+
 
 def test_converter_valor_brl_com_separador_de_milhar():
     serie = pd.Series(["1.234,56", "10,00", "0,00"])
@@ -36,9 +35,9 @@ def test_padronizar_texto_remove_espacos_extras():
     assert resultado.tolist() == ["Texto com espaços", "Normal"]
 
 
-# ----------------------------------------------------------------------------
-# tratar_licitacoes
-# ----------------------------------------------------------------------------
+
+# Tratar_licitacoes
+
 
 def _licitacao_minima(**overrides) -> pd.DataFrame:
     base = {
@@ -79,9 +78,9 @@ def test_tratar_licitacoes_duplicados_exatos_sao_removidos():
     assert len(resultado) == 1
 
 
-# ----------------------------------------------------------------------------
-# tratar_itens -- inclui teste de REGRESSÃO do bug de ordem de operações
-# ----------------------------------------------------------------------------
+
+# Tratar_itens -- inclui teste de REGRESSÃO do bug de ordem de operações
+
 
 def _item_minimo(**overrides) -> pd.DataFrame:
     base = {
@@ -146,9 +145,9 @@ def test_tratar_itens_classifica_tipo_documento():
     assert resultado["tipo_documento_vencedor"].tolist() == ["CNPJ", "CPF"]
 
 
-# ----------------------------------------------------------------------------
-# tratar_participantes
-# ----------------------------------------------------------------------------
+
+# Tratar_participantes
+
 
 def _participante_minimo(**overrides) -> pd.DataFrame:
     base = {

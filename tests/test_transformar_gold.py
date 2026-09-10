@@ -13,9 +13,8 @@ import pandas as pd
 import transformar_gold as gold
 
 
-# ----------------------------------------------------------------------------
 # _classificar_documento
-# ----------------------------------------------------------------------------
+
 
 def test_classificar_documento():
     assert gold._classificar_documento("12345678000199") == "CNPJ"   # 14 dígitos
@@ -25,21 +24,16 @@ def test_classificar_documento():
     assert gold._classificar_documento(None) == "DESCONHECIDO"
 
 
-# ----------------------------------------------------------------------------
-# construir_dim_licitacao -- REGRESSÃO: chave composta precisa da modalidade
-# ----------------------------------------------------------------------------
+# Construir_dim_licitacao -- REGRESSÃO: chave composta precisa da modalidade
+
 
 def test_dim_licitacao_mesmo_numero_e_ug_com_modalidades_diferentes_gera_duas_linhas():
     """
-    Teste de regressão: encontramos 13 casos reais em que o mesmo par
+    Teste de regressão: foi encontrado 13 casos reais em que o mesmo par
     (Número Licitação, Código UG) se repete com Código Modalidade Compra
     diferente -- por exemplo, o mesmo número usado tanto para um Pregão
     quanto para uma Dispensa de Licitação na mesma UG.
 
-    A primeira versão deste script deduplicava a dim_licitacao usando só
-    (Número Licitação, Código UG), o que descartava uma das duas linhas
-    por engano e fazia itens da licitação descartada se vincularem aos
-    atributos (modalidade, situação, objeto) da licitação errada.
     """
     df = pd.DataFrame({
         "Número Licitação": ["000142023", "000142023"],
@@ -75,17 +69,15 @@ def test_dim_licitacao_duplicata_real_e_removida():
     assert len(dim) == 1
 
 
-# ----------------------------------------------------------------------------
-# construir_dim_produto -- REGRESSÃO: união de Itens + Participantes
-# ----------------------------------------------------------------------------
+
+# Construir_dim_produto -- REGRESSÃO: união de Itens + Participantes
+
 
 def test_dim_produto_inclui_descricoes_que_so_existem_em_participantes():
     """
     Teste de regressão: 31 descrições de item, no conjunto de dados real,
     só aparecem na tabela de Participantes (não têm registro espelhado em
-    Itens). A primeira versão deste script construía dim_produto só a
-    partir de Itens, deixando essas linhas de fato_participacao com
-    sk_produto nulo.
+    Itens).
     """
     itens = pd.DataFrame({"Descrição": ["Produto A", "Produto B"]})
     participantes = pd.DataFrame({"Descrição Item Compra": ["Produto B", "Produto C (só em participantes)"]})
@@ -97,9 +89,9 @@ def test_dim_produto_inclui_descricoes_que_so_existem_em_participantes():
     assert len(dim) == 3  # "Produto B" não deve aparecer duplicado
 
 
-# ----------------------------------------------------------------------------
-# construir_dim_tempo / construir_dim_orgao / construir_dim_fornecedor
-# ----------------------------------------------------------------------------
+
+# Construir_dim_tempo / construir_dim_orgao / construir_dim_fornecedor
+
 
 def test_dim_tempo_uma_linha_por_data_distinta():
     df = pd.DataFrame({
@@ -127,9 +119,9 @@ def test_dim_fornecedor_uniao_de_vencedores_e_participantes_sem_duplicar_codigo(
     assert set(dim["codigo_fornecedor"]) == {"11111111000100", "22222222000100"}
 
 
-# ----------------------------------------------------------------------------
-# construir_fato_item -- integridade referencial fim a fim
-# ----------------------------------------------------------------------------
+
+# Construir_fato_item -- integridade referencial fim a fim
+
 
 def test_fato_item_sem_nulos_nas_chaves_estrangeiras_com_dados_consistentes():
     licitacoes = pd.DataFrame({

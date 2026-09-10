@@ -17,13 +17,6 @@ Cada execução TRUNCATE + COPY nas tabelas de destino -- ou seja, é segura
 para reprocessamento: rodar de novo não duplica dados, apenas substitui o
 conteúdo pela versão mais recente da camada gold.
 
-Configuração via variáveis de ambiente (mesmas usadas pelo docker-compose.yml):
-  POSTGRES_HOST     - padrão: localhost
-  POSTGRES_PORT     - padrão: 5432
-  POSTGRES_USER     - padrão: datagov
-  POSTGRES_PASSWORD - padrão: datagov
-  POSTGRES_DB       - padrão: datagov_dw
-  GOLD_DIR          - padrão: gold
 """
 
 import io

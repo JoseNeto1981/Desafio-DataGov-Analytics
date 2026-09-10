@@ -6,16 +6,6 @@ Lê os arquivos CSV baixados manualmente do Portal da Transparência
 data lake local: particionados por ano/mês, com um manifesto de
 rastreabilidade ao lado de cada arquivo.
 
-Por que isso ainda conta como "ingestão", mesmo sendo download manual?
-Porque a parte que o desafio realmente cobra aqui — validação de
-estrutura, particionamento, rastreabilidade, preservação do dado bruto,
-logs, reprocessamento seguro — está toda presente. A única etapa que
-não está automatizada ainda é o clique de download em si (a API exige
-autenticação gov.br que está bloqueada — ver README, seção "Decisões
-técnicas e limitações"). Quando essa autenticação for resolvida, essa
-etapa manual é substituída por chamadas HTTP, sem mudar o resto do
-pipeline.
-
 Convenção de nomes de arquivo esperada: AAAAMM_NomeDoDataset.csv
 Exemplo: 202401_Licitação.csv, 202401_ItemLicitação.csv
 
@@ -36,9 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-# --------------------------------------------------------------------------
+
 # Configuração
-# --------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,20 +38,11 @@ logger = logging.getLogger("ingestao_bronze")
 LANDING_ZONE_DIR = Path(os.environ.get("LANDING_ZONE_DIR", "dados_brutos"))
 BRONZE_DIR = Path(os.environ.get("BRONZE_DIR", "bronze"))
 
-# Confirmados na etapa de exploração (ver conversa/README): o Portal da
-# Transparência entrega esses CSVs em Latin-1, com ';' como separador —
-# diferente do padrão internacional (UTF-8, ',') e por isso documentado
-# explicitamente aqui, não deixado implícito.
 ENCODING_ORIGEM = "latin1"
 SEPARADOR_ORIGEM = ";"
 
 PADRAO_NOME_ARQUIVO = re.compile(r"^(?P<ano>\d{4})(?P<mes>\d{2})_(?P<dataset>.+)\.csv$")
 
-# Mapeia o nome do dataset exatamente como vem no arquivo baixado para um
-# nome lógico padronizado (sem acento, minúsculo, seguro para nome de pasta)
-# e a lista mínima de colunas que ele precisa ter para ser considerado válido.
-# Isso é o que garante que uma mudança inesperada de schema na fonte não
-# entre silenciosamente no pipeline — o script para e avisa.
 DATASETS_ESPERADOS = {
     "Licitação": {
         "nome_logico": "licitacoes",
@@ -183,14 +163,7 @@ def processar_arquivo(caminho: Path) -> Optional[ResultadoIngestao]:
     diretorio_destino.mkdir(parents=True, exist_ok=True)
 
     caminho_destino = diretorio_destino / nome
-    # copyfile() em vez de copy()/copy2(): ambas as outras tentam replicar
-    # metadados do arquivo original (copy2 copia timestamp via utime,
-    # copy copia permissões via chmod) -- as duas falham com
-    # PermissionError nesse ambiente específico (bind mount Windows -> WSL2
-    # -> container Docker, que não permite alterar atributos de arquivo
-    # através da ponte de sistemas de arquivos). copyfile() copia somente
-    # bytes de conteúdo, sem tocar em metadados -- suficiente aqui, já que
-    # o manifesto abaixo registra nosso próprio timestamp de ingestão.
+    
     shutil.copyfile(caminho, caminho_destino)
 
     checksum = calcular_sha256(caminho_destino)

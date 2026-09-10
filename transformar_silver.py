@@ -3,8 +3,8 @@ Script de tratamento -> camada SILVER.
 
 Lê os arquivos da camada bronze (todos os períodos disponíveis), aplica
 as regras de tratamento e padronização, e grava o resultado em Parquet
-na camada silver -- um arquivo consolidado por dataset (não mais um por
-mês), já que a partir daqui os dados são tratados como um conjunto
+na camada silver -- um arquivo consolidado por dataset, 
+já que a partir daqui os dados são tratados como um conjunto
 único e coerente, pronto para as camadas seguintes.
 
 Cada execução também grava um relatório de qualidade em JSON, contando
@@ -37,9 +37,7 @@ from typing import Optional
 
 import pandas as pd
 
-# --------------------------------------------------------------------------
 # Configuração
-# --------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,9 +81,7 @@ class RelatorioQualidade:
         return self.__dict__
 
 
-# --------------------------------------------------------------------------
 # Funções auxiliares de conversão (reaproveitadas entre datasets)
-# --------------------------------------------------------------------------
 
 def converter_valor_brl(serie: pd.Series) -> pd.Series:
     """Converte string em formato brasileiro ('1.234,56' ou '1234,56') para float."""
@@ -129,8 +125,7 @@ def carregar_bronze(nome_logico: str) -> pd.DataFrame:
             arquivo, encoding=ENCODING_ORIGEM, sep=SEPARADOR_ORIGEM,
             dtype=str,  # tudo como string na leitura -- conversão de tipo é explícita e controlada abaixo
         )
-        # ano/mes extraídos do caminho particionado, não do nome do arquivo,
-        # para casar com a estrutura que o script de ingestão já criou.
+        
         df_parte["_ano_particao"] = arquivo.parent.parent.name.split("=")[1]
         df_parte["_mes_particao"] = arquivo.parent.name.split("=")[1]
         partes.append(df_parte)
@@ -139,9 +134,7 @@ def carregar_bronze(nome_logico: str) -> pd.DataFrame:
     return pd.concat(partes, ignore_index=True)
 
 
-# --------------------------------------------------------------------------
 # Tratamento por dataset
-# --------------------------------------------------------------------------
 
 def tratar_licitacoes(df: pd.DataFrame) -> tuple[pd.DataFrame, RelatorioQualidade]:
     rel = RelatorioQualidade(dataset="licitacoes", linhas_entrada=len(df))
@@ -173,9 +166,7 @@ def tratar_licitacoes(df: pd.DataFrame) -> tuple[pd.DataFrame, RelatorioQualidad
 
     df["Data Resultado Compra"] = converter_data_br(df["Data Resultado Compra"])
     df["Data Abertura"] = converter_data_br(df["Data Abertura"])
-    # Data Abertura nula é esperado (nem toda modalidade tem sessão de
-    # abertura pública, ex.: inexigibilidade) — não é tratada como erro.
-
+    
     antes = len(df)
     df = df.drop_duplicates()
     rel.duplicados_removidos = antes - len(df)
@@ -202,13 +193,6 @@ def tratar_itens(df: pd.DataFrame) -> tuple[pd.DataFrame, RelatorioQualidade]:
         lambda v: "CNPJ" if len(v) == 14 else ("CPF" if len(v) == 11 else "OUTRO")
     )
 
-    # IMPORTANTE: a deduplicação acontece ANTES de gerar a chave substituta
-    # para Código Item Compra. Se gerássemos a chave primeiro, cada linha
-    # ganharia um valor diferente (baseado no índice) e duplicatas reais
-    # (mesma licitação, mesmo item, mesmo valor, ambas sem código de origem)
-    # deixariam de ser detectadas como duplicatas — foi exatamente isso que
-    # aconteceu na primeira versão deste script, corrigido após conferir
-    # os números do relatório de qualidade contra uma checagem manual.
     antes = len(df)
     df = df.drop_duplicates()
     rel.duplicados_removidos = antes - len(df)
@@ -281,9 +265,7 @@ def tratar_empenhos(df: pd.DataFrame) -> tuple[pd.DataFrame, RelatorioQualidade]
     return df, rel
 
 
-# --------------------------------------------------------------------------
 # Orquestração
-# --------------------------------------------------------------------------
 
 PIPELINE = {
     "licitacoes": tratar_licitacoes,

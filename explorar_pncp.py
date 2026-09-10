@@ -26,9 +26,8 @@ from pathlib import Path
 
 import requests
 
-# --------------------------------------------------------------------------
+
 # Configuração
-# --------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,15 +37,10 @@ logger = logging.getLogger("explorar_pncp")
 
 BASE_URL_CONSULTA = "https://pncp.gov.br/api/consulta"
 BASE_URL = f"{BASE_URL_CONSULTA}/v1/contratacoes/publicacao"
-# Endpoint mais leve, usado só para checar se a API está no ar antes de
-# gastar tempo/tentativas no endpoint pesado de contratações.
 HEALTHCHECK_URL = f"{BASE_URL_CONSULTA}/v1/atas"
 OUTPUT_DIR = Path(__file__).parent / "amostras_raw"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Principais códigos de modalidade de contratação (tabela de domínio do PNCP).
-# Vale a pena rodar o script para mais de um código, pois a API não permite
-# consultar "todas as modalidades" em uma única chamada.
 MODALIDADES = {
     6: "Pregão Eletrônico",
     8: "Dispensa de Licitação",
@@ -69,8 +63,7 @@ def api_esta_disponivel() -> bool:
     params = {"dataInicial": hoje, "dataFinal": hoje, "pagina": 1}
     try:
         resposta = requests.get(HEALTHCHECK_URL, params=params, timeout=10)
-        # Mesmo um 204 (sem conteúdo) ou 400 de validação indicam que a API
-        # está respondendo — o que importa aqui é não ter erro de conexão/timeout/5xx.
+    
         disponivel = resposta.status_code < 500
         logger.info(
             "Health-check em /v1/atas: status %s (%s)",
@@ -163,8 +156,7 @@ def explorar_modalidade(
         total_registros = corpo.get("totalRegistros", 0)
         total_paginas = corpo.get("totalPaginas", 0)
 
-        # Salva a resposta bruta da primeira página de cada modalidade como amostra
-        # (equivalente a um arquivo bronze, mas fora do fluxo definitivo do pipeline)
+    
         if pagina == 1:
             caminho_amostra = OUTPUT_DIR / f"modalidade_{codigo_modalidade}_pagina_{pagina}.json"
             caminho_amostra.write_text(json.dumps(corpo, ensure_ascii=False, indent=2))

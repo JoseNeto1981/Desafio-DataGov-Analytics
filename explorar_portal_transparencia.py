@@ -24,9 +24,7 @@ from pathlib import Path
 
 import requests
 
-# --------------------------------------------------------------------------
 # Configuração
-# --------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,19 +37,13 @@ LICITACOES_URL = f"{BASE_URL}/licitacoes"
 OUTPUT_DIR = Path(__file__).parent / "amostras_raw_transparencia"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# A chave NUNCA fica hardcoded no código — vem de variável de ambiente,
-# carregada a partir do arquivo .env (requisito explícito do desafio:
-# "configuração por variáveis de ambiente").
+
 API_KEY = os.environ.get("PORTAL_TRANSPARENCIA_API_KEY")
 
 TIMEOUT_SEGUNDOS = 30
 MAX_TENTATIVAS = 3
 ESPERA_ENTRE_TENTATIVAS = 3
 
-# Alguns códigos de órgão conhecidos, só para o teste exploratório.
-# 26000 = Ministério da Educação; 26439 = uma universidade federal (exemplo
-# encontrado na documentação oficial). No pipeline real, essa lista viria
-# de uma consulta prévia à tabela de órgãos, não hardcoded.
 ORGAOS_TESTE = {
     26000: "Ministério da Educação",
     26439: "Órgão de exemplo (doc. oficial)",
@@ -103,9 +95,6 @@ def buscar_pagina(data_inicial: str, data_final: str, codigo_orgao: int, pagina:
             )
 
             if resposta.status_code == 400:
-                # Erro de parâmetro NÃO deve ser tentado de novo — é erro do
-                # cliente, não instabilidade do servidor. Logamos o corpo da
-                # resposta para entender o que a API espera.
                 logger.error(
                     "400 Bad Request para órgão=%s página=%s. Corpo: %s",
                     codigo_orgao, pagina, resposta.text[:500],
@@ -182,11 +171,6 @@ def explorar_orgao(
             "Órgão %s | página %s | %s registros nesta página",
             codigo_orgao, pagina, len(registros),
         )
-
-        # Como esta API não informa totalPaginas, usamos uma heurística comum:
-        # se a página veio com menos registros que o tamanho padrão de página,
-        # provavelmente é a última. Ajuste TAMANHO_PADRAO_PAGINA se necessário
-        # após ver o volume real retornado.
         TAMANHO_PADRAO_PAGINA = 15  # valor típico documentado para esta API
         if len(registros) < TAMANHO_PADRAO_PAGINA:
             break
