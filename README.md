@@ -214,7 +214,9 @@ inline pelo próprio GitHub.
 ├── dashboard/
 │   ├── datagov.pbix          # Dashboard Power BI (5 páginas)
 │   ├── datagov.pdf           # Exportação em PDF (visualizável no GitHub)
-│   └── dashboard.md            # Descrição de cada página e principais achados
+│   └── dashboard.md          # Descrição de cada página e principais achados
+├── apresentacao/
+│   └── apresentacao_final.pptx  # Apresentação técnica final (seção 23 do desafio)
 ├── ingestao_bronze.py         # Ingestão: dados_brutos/ -> bronze/
 ├── transformar_silver.py      # Tratamento: bronze/ -> silver/
 ├── transformar_gold.py        # Modelagem dimensional: silver/ -> gold/ (fato/dimensões)
@@ -526,3 +528,14 @@ documentada cobre watermark por período, chaves substitutas estáveis
 mecanismos de consistência: escrita atômica de arquivo, transações no
 Postgres, idempotência ponta a ponta, e uma tabela de controle de
 execução.
+
+## 19. Apresentação final
+
+Apresentação técnica cobrindo problema, fonte de dados, arquitetura,
+tecnologias, fluxo do pipeline, modelo de dados, estratégia de Data
+Quality, resultados das análises, dashboard, principais desafios
+encontrados, decisões técnicas, limitações e próximos passos — entrega da
+seção 23 do desafio original.
+
+Arquivo: **[`apresentacao/apresentacao_final.pptx`](apresentacao/apresentacao_final.pptx)**
+(17 slides, com anotações do apresentador em cada um).
