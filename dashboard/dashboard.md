@@ -67,7 +67,7 @@ agregados das outras páginas.
 
 ## Página 5 — Anomalias de Preço
 
-**Conteúdo:** tabela alimentada pela view `vw_anomalias_precos` do
+**Conteúdo:** tabela alimentada pela view `vw_anomalias_preco` do
 PostgreSQL (não por uma medida DAX — ver decisão técnica abaixo), listando
 itens cujo valor unitário excede a média do mesmo produto em mais de 2
 desvios-padrão, ordenada do caso mais extremo para o menos extremo.
@@ -86,7 +86,7 @@ já estava definida e testada em `perguntas_negocio.sql` (perguntas 8 e
 10). Reimplementar a mesma fórmula em DAX criaria duas versões da mesma
 lógica de negócio, em lugares diferentes — risco real de divergência se o
 critério for ajustado um dia e só um dos dois lados for atualizado. A
-view `vw_anomalias_precos` (ver `vw_anomalias_precos.sql`) resolve isso: a
+view `vw_anomalias_preco` (ver `vw_anomalias_preco.sql`) resolve isso: a
 regra vive em um único lugar (o banco), e o Power BI só consome o
 resultado já calculado, sem duplicar código.
 
@@ -105,7 +105,7 @@ já tentou gerar documentação visual de um dashboard com tabelas largas.
 | Item | Detalhe |
 |---|---|
 | Fonte de dados | PostgreSQL (`datagov_dw`), modo de conexão: Importar |
-| Tabelas usadas | 5 dimensões + 2 fatos (esquema estrela) + `vw_anomalias_precos` |
+| Tabelas usadas | 5 dimensões + 2 fatos (esquema estrela) + `vw_anomalias_preco` |
 | Medidas DAX | 6, todas na tabela `Medidas` |
 | Páginas | 5, organizadas por tema |
 | Exportação | PDF único (`datagov.pdf`), todas as páginas |
